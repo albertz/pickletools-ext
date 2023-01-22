@@ -6021,6 +6021,11 @@ def main():
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('file', help='file to unpickle')
     args = arg_parser.parse_args()
+    try:
+        import better_exchook
+        better_exchook.install()
+    except ImportError:
+        pass
     explain_pickle(file=args.file)
 
 
