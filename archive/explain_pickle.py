@@ -241,7 +241,7 @@ def explain_pickle(pickle=None, file=None, compress=True, **kwargs):
     if pickle is not None:
         p = pickle
     elif file is not None:
-        with open(file) as f:
+        with open(file, "rb") as f:
             p = f.read()
     else:
         raise ValueError("Either pickle or file must be specified")
