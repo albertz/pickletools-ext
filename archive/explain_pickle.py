@@ -279,7 +279,6 @@ def explain_pickle_string(pickle, in_current_sage=False,
     if eval:
         if default_assumptions:
             raise ValueError("Not safe to evaluate code generated with default_assumptions")
-        from sage.misc.sage_eval import sage_eval
         result = sage_eval(ans, preparse=preparse)
         print(ans)
         return result
