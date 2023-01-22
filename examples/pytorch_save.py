@@ -47,3 +47,4 @@ for var_name in optimizer.state_dict():
 
 
 torch.save(model.state_dict(), "pytorch_checkpoint.pt")
+torch.load("pytorch_checkpoint.pt")
