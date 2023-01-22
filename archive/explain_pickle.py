@@ -160,15 +160,15 @@ from pickletools import genops
 import zlib as comp
 import bz2 as comp_other
 
-from sage.misc.sage_input import SageInputBuilder, SageInputExpression
-from sage.misc.sage_eval import sage_eval
-from sage.structure.sage_object import unpickle_override, unpickle_global, dumps, register_unpickle_override
+# from sage.misc.sage_input import SageInputBuilder, SageInputExpression
+# from sage.misc.sage_eval import sage_eval
+# from sage.structure.sage_object import unpickle_override, unpickle_global, dumps, register_unpickle_override
 import pickletools
 import types
 
 import sys
-import sage.all
 import re
+
 
 def explain_pickle(pickle=None, file=None, compress=True, **kwargs):
     r"""
@@ -2381,6 +2381,9 @@ class PickleExplainer(object):
 
 # Helper routines for explain_pickle
 
+def register_unpickle_override(*args, **kwargs):
+    pass  # dummy stub
+
 def unpickle_newobj(klass, args):
     r"""
     Create a new object; this corresponds to the C code
@@ -3039,3 +3042,15 @@ class TestGlobalFunnyName(object):
 TestGlobalFunnyName.__name__ = "funny$name"
 #This crashed Sphinx. Instead, we manually execute this just before the test.
 #globals()['funny$name'] = TestGlobalFunnyName
+
+
+def main():
+    import argparse
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('file', help='file to unpickle')
+    args = arg_parser.parse_args()
+    explain_pickle(file=args.file)
+
+
+if __name__ == "__main__":
+    main()
