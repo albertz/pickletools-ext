@@ -3226,10 +3226,8 @@ class SageInputBuilder:
         # However, we don't want to assume that hashing x is always
         # efficient, so we only try the lookup if some value of the same
         # type as x has been cached.
-        from sage.structure.all import parent
-
         if type(x) in self._cached_types:
-            v = self._cache.get((parent(x), x))
+            v = self._cache.get((type(x), x))
             if v is not None:
                 return v
 
@@ -3279,12 +3277,7 @@ class SageInputBuilder:
                     return -SIE_literal_stringrep(self, str(-x))
                 else:
                     return SIE_literal_stringrep(self, str(x))
-            from sage.rings.real_mpfr import RR
-            from sage.rings.integer_ring import ZZ
-            rrx = RR(x)
-            if rrx in ZZ and abs(rrx) < (1 << 53):
-                return self.name('float')(self.int(ZZ(rrx)))
-            return self.name('float')(RR(x))
+            return self.name('float')(self.float_str(x))
 
         if isinstance(x, str):
             return SIE_literal_stringrep(self, repr(x))
@@ -3961,6 +3954,195 @@ class SageInputBuilder:
             return SageInputAnswer(sif._commands, sif.format(e, 0))
 
 
+class SageInputFormatter:
+    r"""
+    An instance of this class is used to keep track of variable names
+    and a sequence of generated commands during the :func:`sage_input`
+    formatting process.
+    """
+
+    def __init__(self):
+        r"""
+        Initialize an instance of :class:`SageInputFormatter`.
+
+        EXAMPLES::
+
+            sage: from sage.misc.sage_input import SageInputFormatter
+            sage: sif = SageInputFormatter()
+        """
+        self._commands = ''
+        self._names = set()
+        self._dup_names = {}
+
+    def format(self, e, prec):
+        r"""
+        Format a Sage input expression into a string.
+
+        INPUT:
+
+        - ``e`` - a :class:`SageInputExpression`
+
+        - ``prec`` - an integer representing a precedence level
+
+        First, we check to see if ``e`` should be replaced by a variable.
+        If so, we generate the command to assign the variable, and return
+        the name of the variable.
+
+        Otherwise, we format the expression by calling its \method{_sie_format}
+        method, and add parentheses if necessary.
+
+        EXAMPLES::
+
+            sage: from sage.misc.sage_input import SageInputBuilder, SageInputFormatter
+
+            sage: sib = SageInputBuilder()
+            sage: sif = SageInputFormatter()
+            sage: sie = sib(GF(5))
+
+        Here we ``cheat`` by calling \method{_sie_prepare} twice, to make it
+        use a variable.::
+
+            sage: sie._sie_prepare(sif)
+            sage: sie._sie_prepare(sif)
+            sage: sif._commands
+            ''
+            sage: sif.format(sie, 0)
+            'GF_5'
+            sage: sif._commands
+            'GF_5 = GF(5)\n'
+
+        We demonstrate the use of commands, by showing how to construct
+        code that will produce a random matrix::
+
+            sage: sib = SageInputBuilder()
+            sage: sif = SageInputFormatter()
+            sage: sie = sib.name('matrix')(sib.name('ZZ'), 10, 10)
+            sage: sib.command(sie, sie.randomize())
+            sage: sie._sie_prepare(sif)
+            sage: sif._commands
+            ''
+            sage: sif.format(sie, 0)
+            'si'
+            sage: sif._commands
+            'si = matrix(ZZ, 10, 10)\nsi.randomize()\n'
+        """
+        if e._sie_use_var:
+            if not e._sie_generated:
+                s, _ = e._sie_format(self)
+                # In complicated situations, this can get called
+                # recursively...
+                if not e._sie_generated:
+                    self._commands += '%s = %s\n' % (e._sie_get_varname(self), s)
+                    e._sie_generated = True
+
+            formatted = e._sie_get_varname(self)
+        else:
+            s, iprec = e._sie_format(self)
+            if iprec < prec:
+                s = '(' + s + ')'
+            formatted = s
+
+        commands = e._sie_commands
+        e._sie_commands = []
+
+        for cmd in commands:
+            s_cmd = cmd._sie_format_statement(self)
+            self._commands += s_cmd + '\n'
+
+        return formatted
+
+    def register_name(self, name):
+        r"""
+        Register that some value would like to use a given name.
+        If only one request for a name is received, then we will use the
+        requested name; otherwise, we will add numbers to the end of the
+        name to make it unique.
+
+        If the input name is ``None``, then it is treated as a name of
+        ``'si'``.
+
+        EXAMPLES::
+
+            sage: from sage.misc.sage_input import SageInputFormatter
+
+            sage: sif = SageInputFormatter()
+            sage: sif._names, sif._dup_names
+            (set(), {})
+            sage: sif.register_name('x')
+            sage: sif.register_name('y')
+            sage: sif._names, sif._dup_names
+            ({'x', 'y'}, {})
+            sage: sif.register_name('x')
+            sage: sif._names, sif._dup_names
+            ({'x', 'y'}, {'x': 0})
+        """
+        if name is None:
+            name = 'si'
+
+        if name in self._names:
+            self._dup_names[name] = 0
+        else:
+            self._names.add(name)
+
+    def get_name(self, name):
+        r"""
+        Return a name corresponding to a given requested name.
+        If only one request for a name is received, then we will use the
+        requested name; otherwise, we will add numbers to the end of the
+        name to make it unique.
+
+        If the input name is ``None``, then it is treated as a name of
+        ``'si'``.
+
+        EXAMPLES::
+
+            sage: from sage.misc.sage_input import SageInputFormatter
+
+            sage: sif = SageInputFormatter()
+            sage: names = ('x', 'x', 'y', 'z')
+            sage: for n in names: sif.register_name(n)
+            sage: for n in names: sif.get_name(n)
+            'x1'
+            'x2'
+            'y'
+            'z'
+        """
+        if name is None:
+            name = 'si'
+
+        if name in self._dup_names:
+            next = self._dup_names[name] + 1
+            self._dup_names[name] = next
+            return name + str(next)
+        else:
+            return name
+
+
+# Python's precedence levels.  Hand-transcribed from section 5.14 of
+# the Python 2 reference manual.  In the Python 3 reference manual
+# this is section 6.16.
+# See https://docs.python.org/3/reference/expressions.html
+_prec_lambda = 2
+_prec_or = 4
+_prec_and = 6
+_prec_not = 8
+_prec_membership = 10
+_prec_identity = 12
+_prec_comparison = 14
+_prec_bitor = 16
+_prec_bitxor = 18
+_prec_bitand = 20
+_prec_shift = 22
+_prec_addsub = 24
+_prec_muldiv = 26
+_prec_negate = 28
+_prec_bitnot = 30
+_prec_exponent = 32
+_prec_attribute = 34
+_prec_subscript = 36
+_prec_slicing = 38
+_prec_funcall = 40
+_prec_atomic = 42
 
 
 class SageInputExpression():
@@ -4449,6 +4631,84 @@ class SageInputExpression():
         """
         result, prec = self._sie_format(sif)
         return result
+
+
+class SageInputAnswer(tuple):
+    r"""
+    This class inherits from tuple, so it acts like a tuple when passed
+    to :func:`sage_eval`; but it prints as a sequence of commands.
+
+    EXAMPLES::
+
+        sage: from sage.misc.sage_input import SageInputAnswer
+        sage: v = SageInputAnswer('x = 22\n', 'x/7'); v
+        x = 22
+        x/7
+        sage: isinstance(v, tuple)
+        True
+        sage: v[0]
+        'x = 22\n'
+        sage: v[1]
+        'x/7'
+        sage: len(v)
+        2
+        sage: v = SageInputAnswer('', 'sin(3.14)', {'sin': math.sin}); v
+        LOCALS:
+          sin: <built-in function sin>
+        sin(3.14)
+        sage: v[0]
+        ''
+        sage: v[1]
+        'sin(3.14)'
+        sage: v[2]
+        {'sin': <built-in function sin>}
+    """
+
+    def __new__(cls, cmds, expr, locals=None):
+        r"""
+        Construct an instance of :class:`SageInputAnswer`.
+
+        EXAMPLES::
+
+            sage: from sage.misc.sage_input import SageInputAnswer
+            sage: v = SageInputAnswer('', 'sin(3.14)', {'sin': math.sin}); v
+            LOCALS:
+              sin: <built-in function sin>
+            sin(3.14)
+            sage: v[0]
+            ''
+            sage: v[1]
+            'sin(3.14)'
+            sage: v[2]
+            {'sin': <built-in function sin>}
+        """
+        if locals:
+            return tuple.__new__(cls, (cmds, expr, locals))
+        else:
+            return tuple.__new__(cls, (cmds, expr))
+
+    def __repr__(self):
+        r"""
+        Return a string representation for a :class:`SageInputAnswer`,
+        such that if you evaluate this :class:`SageInputAnswer` at the
+        \sage command line, you get a result in a nice form ready to
+        copy-and-paste.
+
+        EXAMPLES::
+
+            sage: from sage.misc.sage_input import SageInputAnswer
+            sage: v = SageInputAnswer('', 'sin(3.14)', {'sin': math.sin}); v
+            LOCALS:
+              sin: <built-in function sin>
+            sin(3.14)
+        """
+        if len(self) == 2:
+            return self[0] + self[1]
+
+        locals = self[2]
+        locals_text = ''.join('  %s: %r\n' % (k, v)
+                              for k, v in locals.items())
+        return 'LOCALS:\n' + locals_text + self[0] + self[1]
 
 
 class SIE_literal(SageInputExpression):
@@ -6043,7 +6303,7 @@ def main():
         better_exchook.install()
     except ImportError:
         pass
-    explain_pickle(file=args.file)
+    print(explain_pickle(file=args.file, preparse=False))
 
 
 if __name__ == "__main__":
